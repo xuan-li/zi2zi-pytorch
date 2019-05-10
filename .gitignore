@@ -1,2 +1,8 @@
 .vscode
-dataset
+*.obj
+*.jpg
+pairs
+Zonghan
+.ipynb_checkpoints
+*.ipynb
+__pycache__
