@@ -21,7 +21,8 @@ class DatasetFromObj(data.Dataset):
 
     def __getitem__(self, index):
         item = self.image_provider.examples[index]
-        return item[0], self.process(item[1])
+        img_A, img_B = self.process(item[1])
+        return item[0], img_A, img_B
 
     def __len__(self):
         return len(self.image_provider.examples)
@@ -58,7 +59,7 @@ class DatasetFromObj(data.Dataset):
                 img_A = self.transform(img_A)
                 img_B = self.transform(img_B)
             
-            return torch.cat((img_A, img_B), 2)
+            return img_A, img_B
         
         finally:
             image_file.close()
