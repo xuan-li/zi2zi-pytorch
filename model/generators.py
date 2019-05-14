@@ -7,7 +7,7 @@ from torch.optim import lr_scheduler
 class UNetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
-    def __init__(self, input_nc=3, output_nc=3, num_downs=8, ngf=64, embedding_num = 40, embedding_dim = 128, norm_layer=nn.BatchNorm2d, use_dropout=False):
+    def __init__(self, input_nc=3, output_nc=3, num_downs=8, ngf=64, embedding_num=40, embedding_dim=128, norm_layer=nn.BatchNorm2d, use_dropout=False, is_training=True):
         """Construct a Unet generator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -23,7 +23,7 @@ class UNetGenerator(nn.Module):
         super(UNetGenerator, self).__init__()
         # construct unet structure
 
-        unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True, embedding_num=embedding_num, embedding_dim=embedding_dim)  # add the innermost layer
+        unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True, embedding_dim=embedding_dim)  # add the innermost layer
         for _ in range(num_downs - 5):          # add intermediate layers with ngf * 8 filters
             unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
         # gradually reduce the number of filters from ngf * 8 to ngf
@@ -32,9 +32,14 @@ class UNetGenerator(nn.Module):
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
         self.encoder = self.model.encoder
-    def forward(self, label, x):
+        self.embedder = nn.Embedding(embedding_num, embedding_dim)
+        self.is_training = is_training
+    def forward(self, style_or_label, x):
         """Standard forward"""
-        return self.model(label, x)
+        if self.is_training:
+            return self.model(self.embedder(style_or_label), x)
+        else:
+            return self.model(style_or_label, x)
 
 
 class UnetSkipConnectionBlock(nn.Module):
@@ -44,7 +49,7 @@ class UnetSkipConnectionBlock(nn.Module):
     """
 
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, embedding_num = None, embedding_dim = None, norm_layer=nn.BatchNorm2d, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, embedding_dim=128, norm_layer=nn.BatchNorm2d, use_dropout=False):
         """Construct a Unet submodule with skip connections.
 
         Parameters:
@@ -80,9 +85,6 @@ class UnetSkipConnectionBlock(nn.Module):
             down = [downconv]
             up = [uprelu, upconv, nn.Tanh()]
             encoder = down + [submodule.encoder]
-            decoder = [submodule.decoder] + up
-            embedder = submodule.embedder
-            
 
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc + embedding_dim, outer_nc,
@@ -90,9 +92,7 @@ class UnetSkipConnectionBlock(nn.Module):
                                         padding=1, bias=use_bias)
             down = [downrelu, downconv]
             up = [uprelu, upconv, upnorm]
-            embedder = nn.Embedding(embedding_num, embedding_dim) 
             encoder = down
-            decoder = up
 
         else:
             upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
@@ -101,32 +101,28 @@ class UnetSkipConnectionBlock(nn.Module):
             down = [downrelu, downconv, downnorm]
             up = [uprelu, upconv, upnorm]
             encoder = down + [submodule.encoder]
-            embedder = submodule.embedder
-            decoder = [submodule.decoder] + up
 
             if use_dropout:
                 up = up + [nn.Dropout(0.5)]
         
+        self.submodule = submodule
         self.encoder = nn.Sequential(*encoder)
-        self.decoder = nn.Sequential(*decoder)
-        self.embedder = embedder
         self.down = nn.Sequential(*down)
         self.up = nn.Sequential(*up)
 
-    def forward(self, label, x):
+    def forward(self, style, x):
         if self.innermost:
-            embedding = self.embedder(label)
             encode = self.down(x)
-            enc = torch.cat([embedding.view(embedding.shape[0], embedding.shape[1], 1, 1), encode], 1)
+            enc = torch.cat([style.view(style.shape[0], style.shape[1], 1, 1), encode], 1)
             dec = self.up(enc)
             return torch.cat([x, dec], 1), encode.view(x.shape[0], -1)
         elif self.outermost:
             enc = self.down(x)
-            sub, encode = self.submodule(label, enc)
+            sub, encode = self.submodule(style, enc)
             dec = self.up(sub)
             return dec, encode
         else:   # add skip connections
             enc = self.down(x)
-            sub, encode = self.submodule(label, enc)
+            sub, encode = self.submodule(style, enc)
             dec = self.up(sub)
             return torch.cat([x, dec], 1), encode
