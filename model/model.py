@@ -6,13 +6,14 @@ from .losses import CategoryLoss, BinaryLoss
 import os
 from torch.optim.lr_scheduler import StepLR
 from utils.net_init import init_net
+import torchvision.utils as vutils
 
 
 class Zi2ZiModel:
     def __init__(self, input_nc=3 ,embedding_num=40, embedding_dim=128, 
                 ngf=64, ndf=64, 
                 Lconst_penalty=15, Lcategory_penalty=1, L1_penalty=100, 
-                schedule=10, lr=0.001, is_training=True, gpu_ids=None, save_dir='.'):
+                schedule=10, lr=0.001, gpu_ids=None, save_dir='.', is_training=True):
         
         if is_training:
             self.use_dropout = True
@@ -22,7 +23,6 @@ class Zi2ZiModel:
         self.Lconst_penalty = Lconst_penalty
         self.Lcategory_penalty = Lcategory_penalty
         self.L1_penalty = L1_penalty
-        self.is_training = is_training
         
         self.save_dir = save_dir
         self.gpu_ids = gpu_ids
@@ -33,11 +33,12 @@ class Zi2ZiModel:
         self.ngf = ngf
         self.ndf = ndf
         self.lr = lr
+        self.is_training = is_training
 
     def setup(self):
 
         self.netG = UNetGenerator(input_nc=self.input_nc, embedding_num=self.embedding_num, embedding_dim=self.embedding_dim, 
-                                    ngf=self.ngf, use_dropout=self.use_dropout, is_training=self.is_training)
+                                    ngf=self.ngf, use_dropout=self.use_dropout)
         self.netD = Discriminator(input_nc=2*self.input_nc, embedding_num=self.embedding_num, ndf=self.ndf)
 
         init_net(self.netG, gpu_ids=self.gpu_ids)
@@ -54,6 +55,22 @@ class Zi2ZiModel:
         self.l1_loss = nn.L1Loss()
         self.mse = nn.MSELoss()
         self.sigmoid = nn.Sigmoid()
+
+        if self.gpu_ids:
+            self.category_loss.cuda()
+            self.real_binary_loss.cuda()
+            self.fake_binary_loss.cuda()
+            self.l1_loss.cuda()
+            self.mse.cuda()
+            self.sigmoid.cuda()
+        
+        if self.is_training:
+            self.netD.train()
+            self.netG.train()
+        else:
+            self.netD.eval()
+            self.netG.eval()
+
 
     def set_input(self, labels, real_A, real_B):
         if self.gpu_ids:
@@ -166,7 +183,7 @@ class Zi2ZiModel:
                 net = getattr(self, 'net' + name)
 
                 if self.gpu_ids and torch.cuda.is_available():
-                    torch.save(net.module.cpu().state_dict(), save_path)
+                    torch.save(net.cpu().state_dict(), save_path)
                     net.cuda(self.gpu_ids[0])
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
@@ -186,4 +203,14 @@ class Zi2ZiModel:
                 net.load_state_dict(torch.load(load_path))
                 #net.eval()
     
+    def sample(self, batch, filename):
+        self.set_input(batch[0], batch[2], batch[1])
+        self.forward()
+        tensor_to_plot = torch.cat([self.fake_B, self.real_B], 3)
+        img = vutils.make_grid(tensor_to_plot)
+        vutils.save_image(tensor_to_plot, filename)
+
+
+
+            
     

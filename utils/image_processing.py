@@ -13,3 +13,5 @@ def plot_tensor(tensor):
     img = np.transpose(tensor.data, (1, 2, 0))
     plt.imshow(img)
 
+
+

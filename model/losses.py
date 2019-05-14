@@ -24,6 +24,8 @@ class BinaryLoss(nn.Module):
             labels = torch.ones(logits.shape[0], 1)
         else:
             labels = torch.zeros(logits.shape[0], 1)
+        if logits.is_cuda:
+            labels = labels.cuda()
         return self.bce(logits, labels)
 
 

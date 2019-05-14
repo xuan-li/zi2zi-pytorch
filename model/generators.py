@@ -7,7 +7,7 @@ from torch.optim import lr_scheduler
 class UNetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
-    def __init__(self, input_nc=3, output_nc=3, num_downs=8, ngf=64, embedding_num=40, embedding_dim=128, norm_layer=nn.BatchNorm2d, use_dropout=False, is_training=True):
+    def __init__(self, input_nc=3, output_nc=3, num_downs=8, ngf=64, embedding_num=40, embedding_dim=128, norm_layer=nn.BatchNorm2d, use_dropout=False):
         """Construct a Unet generator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -32,10 +32,9 @@ class UNetGenerator(nn.Module):
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
         self.embedder = nn.Embedding(embedding_num, embedding_dim)
-        self.is_training = is_training
     def forward(self, x, style_or_label=None):
         """Standard forward"""
-        if self.is_training and style_or_label is not None:
+        if self.training and style_or_label is not None:
             return self.model(x, self.embedder(style_or_label))
         else:
             return self.model(x, style_or_label)

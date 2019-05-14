@@ -10,7 +10,7 @@ import torch
 parser = argparse.ArgumentParser(description='Train')
 parser.add_argument('--experiment_dir', required=True,
                     help='experiment directory, data, samples,checkpoints,etc')
-parser.add_argument('--gpu_ids', default=[], help="GPUs")
+parser.add_argument('--gpu_ids', default=[], nargs='+', help="GPUs")
 parser.add_argument('--image_size', type=int, default=256,
                     help="size of your input and output image")
 parser.add_argument('--L1_penalty', type=int, default=100, help='weight for L1 loss')
@@ -34,7 +34,7 @@ parser.add_argument('--inst_norm', action='store_true',
                     help='use conditional instance normalization in your model')
 parser.add_argument('--sample_steps', type=int, default=10,
                     help='number of batches in between two samples are drawn from validation set')
-parser.add_argument('--checkpoint_steps', type=int, default=500,
+parser.add_argument('--checkpoint_steps', type=int, default=100,
                     help='number of batches in between two checkpoints')
 parser.add_argument('--flip_labels', action='store_true',
                     help='whether flip training data labels or not, in fine tuning')
@@ -53,26 +53,23 @@ def main():
 
     model = Zi2ZiModel(embedding_num=args.embedding_num, embedding_dim=args.embedding_dim,
                         Lconst_penalty=args.Lconst_penalty, Lcategory_penalty=args.Lcategory_penalty,  
-                        save_dir=checkpoint_dir)
+                        save_dir=checkpoint_dir, gpu_ids=args.gpu_ids)
     model.setup()
     model.print_networks(True)
-
     if args.resume is not None:
         model.load_networks(args.resume)
 
-    batch_num = 0
     start_epoch = args.resume if args.resume is not None else 0
     for epoch in range(start_epoch, args.epoch):
         for i, batch in enumerate(dataloader):
             model.set_input(batch[0], batch[2], batch[1])
             model.optimize_parameters()
             print(model.g_loss.data, model.d_loss.data)
-
-            batch_num += 1
-            if batch_num % args.checkpoint_steps == 0:
+            if i % args.checkpoint_steps == 0:
                 model.save_networks(epoch)
-
+            if i % args.sample_steps == 0:
+                model.sample(batch, os.path.join(sample_dir, "sample_{}_{}.png".format(epoch, i)))
         model.update_lr()
 
 if __name__ == '__main__':
-    main()
+    main()  
