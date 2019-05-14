@@ -4,30 +4,66 @@ from .generators import UNetGenerator
 from .discriminators import Discriminator
 from .losses import CategoryLoss, BinaryLoss
 import os
+from torch.optim.lr_scheduler import StepLR
+from utils.net_init import init_net
+
 
 class Zi2ZiModel:
-    def __init__(self, input_nc=3 ,embedding_num = 40, ngf=64, ndf=64, Lconst_penalty=15, Lcategory_penalty=1,L1_penalty=100, lr=0.001, is_training=True, gpu_ids=None, save_dir='.'):
-        self.netG = UNetGenerator(input_nc=input_nc, embedding_num=embedding_num, ngf=ngf)
-        self.netD = Discriminator(input_nc=2*input_nc, embedding_num=embedding_num, ndf=ndf)
-        self.category_loss = CategoryLoss(embedding_num)
+    def __init__(self, input_nc=3 ,embedding_num=40, embedding_dim=128, 
+                ngf=64, ndf=64, 
+                Lconst_penalty=15, Lcategory_penalty=1, L1_penalty=100, 
+                schedule=10, lr=0.001, is_training=True, gpu_ids=None, save_dir='.'):
+        
+        if is_training:
+            self.use_dropout = True
+        else:
+            self.use_dropout = False
+
+        self.Lconst_penalty = Lconst_penalty
+        self.Lcategory_penalty = Lcategory_penalty
+        self.L1_penalty = L1_penalty
+        self.is_training = is_training
+        
+        self.save_dir = save_dir
+        self.gpu_ids = gpu_ids
+
+        self.input_nc = input_nc
+        self.embedding_dim = embedding_dim
+        self.embedding_num = embedding_num
+        self.ngf = ngf
+        self.ndf = ndf
+        self.lr = lr
+
+    def setup(self):
+
+        self.netG = UNetGenerator(input_nc=self.input_nc, embedding_num=self.embedding_num, embedding_dim=self.embedding_dim, 
+                                    ngf=self.ngf, use_dropout=self.use_dropout, is_training=self.is_training)
+        self.netD = Discriminator(input_nc=2*self.input_nc, embedding_num=self.embedding_num, ndf=self.ndf)
+
+        init_net(self.netG, gpu_ids=self.gpu_ids)
+        init_net(self.netD, gpu_ids=self.gpu_ids)
+
+        self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=self.lr, betas=(0.5, 0.999))
+        self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.lr, betas=(0.5, 0.999))
+        self.scheduler_G = StepLR(self.optimizer_G, step_size=1, gamma=0.5)
+        self.scheduler_D = StepLR(self.optimizer_D, step_size=1, gamma=0.5)
+        
+        self.category_loss = CategoryLoss(self.embedding_num)
         self.real_binary_loss = BinaryLoss(True)
         self.fake_binary_loss = BinaryLoss(False)
         self.l1_loss = nn.L1Loss()
         self.mse = nn.MSELoss()
         self.sigmoid = nn.Sigmoid()
-        self.Lconst_penalty = Lconst_penalty
-        self.Lcategory_penalty = Lcategory_penalty
-        self.L1_penalty = L1_penalty
-        self.is_training = is_training
-        self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=lr, betas=(0.5, 0.999))
-        self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=lr, betas=(0.5, 0.999))
-        self.save_dir = save_dir
-        self.gpu_ids = gpu_ids
 
     def set_input(self, labels, real_A, real_B):
-        self.real_A = real_A
-        self.real_B = real_B
-        self.labels = labels
+        if self.gpu_ids:
+            self.real_A = real_A.to(self.gpu_ids[0])
+            self.real_B = real_B.to(self.gpu_ids[0])
+            self.labels = labels.to(self.gpu_ids[0])
+        else:
+            self.real_A = real_A
+            self.real_B = real_B
+            self.labels = labels
 
     def forward(self):
         # generate fake_B
@@ -42,9 +78,6 @@ class Zi2ZiModel:
 
         real_D_logits, real_category_logits = self.netD(real_AB)
         fake_D_logits, fake_category_logits = self.netD(fake_AB.detach())
-
-        #real_D = self.sigmoid(real_D_logits)
-        #fake_D = self.sigmoid(fake_D_logits)
 
         real_category_loss = self.category_loss(real_category_logits, self.labels)
         fake_category_loss = self.category_loss(fake_category_logits, self.labels)
@@ -70,6 +103,10 @@ class Zi2ZiModel:
         
         self.g_loss = cheat_loss + l1_loss + self.Lcategory_penalty * fake_category_loss + const_loss
         self.g_loss.backward()
+    
+    def update_lr(self):
+        self.scheduler_D.step()
+        self.scheduler_G.step()
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
@@ -148,4 +185,5 @@ class Zi2ZiModel:
                 net = getattr(self, 'net' + name)
                 net.load_state_dict(torch.load(load_path))
                 #net.eval()
+    
     
