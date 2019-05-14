@@ -19,11 +19,11 @@ class BinaryLoss(nn.Module):
         self.bce = nn.BCEWithLogitsLoss()
         self.real = real
     
-    def forward(self, logits, real):
+    def forward(self, logits):
         if self.real:
             labels = torch.ones(logits.shape[0], 1)
         else:
-            labels = torch.zeros(logits.shape[1], 1)
+            labels = torch.zeros(logits.shape[0], 1)
         return self.bce(logits, labels)
 
 

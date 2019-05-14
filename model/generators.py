@@ -31,15 +31,14 @@ class UNetGenerator(nn.Module):
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
         self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)  # add the outermost layer
-        self.encoder = self.model.encoder
         self.embedder = nn.Embedding(embedding_num, embedding_dim)
         self.is_training = is_training
-    def forward(self, style_or_label, x):
+    def forward(self, x, style_or_label=None):
         """Standard forward"""
-        if self.is_training:
-            return self.model(self.embedder(style_or_label), x)
+        if self.is_training and style_or_label is not None:
+            return self.model(x, self.embedder(style_or_label))
         else:
-            return self.model(style_or_label, x)
+            return self.model(x, style_or_label)
 
 
 class UnetSkipConnectionBlock(nn.Module):
@@ -84,7 +83,6 @@ class UnetSkipConnectionBlock(nn.Module):
                                         padding=1)
             down = [downconv]
             up = [uprelu, upconv, nn.Tanh()]
-            encoder = down + [submodule.encoder]
 
         elif innermost:
             upconv = nn.ConvTranspose2d(inner_nc + embedding_dim, outer_nc,
@@ -92,7 +90,6 @@ class UnetSkipConnectionBlock(nn.Module):
                                         padding=1, bias=use_bias)
             down = [downrelu, downconv]
             up = [uprelu, upconv, upnorm]
-            encoder = down
 
         else:
             upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
@@ -100,29 +97,33 @@ class UnetSkipConnectionBlock(nn.Module):
                                         padding=1, bias=use_bias)
             down = [downrelu, downconv, downnorm]
             up = [uprelu, upconv, upnorm]
-            encoder = down + [submodule.encoder]
 
             if use_dropout:
                 up = up + [nn.Dropout(0.5)]
         
         self.submodule = submodule
-        self.encoder = nn.Sequential(*encoder)
         self.down = nn.Sequential(*down)
         self.up = nn.Sequential(*up)
 
-    def forward(self, style, x):
+    def forward(self, x, style=None):
         if self.innermost:
             encode = self.down(x)
+            if style is None:
+                return encode
             enc = torch.cat([style.view(style.shape[0], style.shape[1], 1, 1), encode], 1)
             dec = self.up(enc)
             return torch.cat([x, dec], 1), encode.view(x.shape[0], -1)
         elif self.outermost:
             enc = self.down(x)
-            sub, encode = self.submodule(style, enc)
+            if style is None:
+                return self.submodule(enc)
+            sub, encode = self.submodule(enc, style)
             dec = self.up(sub)
             return dec, encode
         else:   # add skip connections
             enc = self.down(x)
-            sub, encode = self.submodule(style, enc)
+            if style is None:
+                return self.submodule(enc)
+            sub, encode = self.submodule(enc, style)
             dec = self.up(sub)
             return torch.cat([x, dec], 1), encode
