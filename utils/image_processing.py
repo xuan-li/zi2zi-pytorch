@@ -11,6 +11,5 @@ def read_split_image(img):
 
 def plot_tensor(tensor):
     img = np.transpose(tensor.data, (1, 2, 0))
-    print(img.shape)
     plt.imshow(img)
 
