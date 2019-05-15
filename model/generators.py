@@ -34,7 +34,7 @@ class UNetGenerator(nn.Module):
         self.embedder = nn.Embedding(embedding_num, embedding_dim)
     def forward(self, x, style_or_label=None):
         """Standard forward"""
-        if self.training and style_or_label is not None:
+        if style_or_label is not None and 'LongTensor' in style_or_label.type():
             return self.model(x, self.embedder(style_or_label))
         else:
             return self.model(x, style_or_label)

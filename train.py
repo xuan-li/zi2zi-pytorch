@@ -68,7 +68,7 @@ def main():
             if i % args.checkpoint_steps == 0:
                 model.save_networks(epoch)
             if i % args.sample_steps == 0:
-                model.sample(batch, os.path.join(sample_dir, "sample_{}_{}.png".format(epoch, i)))
+                model.sample(batch, os.path.join(sample_dir, "sample_{}_{}".format(epoch, i)))
         model.update_lr()
 
 if __name__ == '__main__':

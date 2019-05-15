@@ -203,12 +203,17 @@ class Zi2ZiModel:
                 net.load_state_dict(torch.load(load_path))
                 #net.eval()
     
-    def sample(self, batch, filename):
+    def sample(self, batch, basename):
         self.set_input(batch[0], batch[2], batch[1])
         self.forward()
         tensor_to_plot = torch.cat([self.fake_B, self.real_B], 3)
         img = vutils.make_grid(tensor_to_plot)
-        vutils.save_image(tensor_to_plot, filename)
+        vutils.save_image(tensor_to_plot, basename + "_construct.png")
+        self.set_input(torch.randn(1, self.embedding_dim).repeat(batch[0].shape[0], 1), batch[2], batch[1])
+        self.forward()
+        tensor_to_plot = torch.cat([self.fake_B, self.real_A], 3)
+        vutils.save_image(tensor_to_plot, basename + "_generate.png")
+
 
 
 
